@@ -34,9 +34,11 @@ public class FoodChainsTTS extends ListenerAdapter {
     private AudioManager audioManager;
     private TextToSpeechClient ttsClient;
     private final AudioPlayerManager playerManager;
-    private AudioPlayer audioPlayer;
+    private final AudioPlayer audioPlayer;
     private AudioPlayerSendHandler sendHandler;
+    private final TrackScheduler trackScheduler;
 
+    int filecount=0;
 
     public static void main(String[] args) {
         try {
@@ -61,6 +63,11 @@ public class FoodChainsTTS extends ListenerAdapter {
         this.ttsClient = ttsClient;
         playerManager = new DefaultAudioPlayerManager();
         playerManager.registerSourceManager(new LocalAudioSourceManager());
+
+        // AudioPlayer와 TrackScheduler 초기화
+        audioPlayer = playerManager.createPlayer();
+        trackScheduler = new TrackScheduler(audioPlayer);
+        audioPlayer.addListener(trackScheduler);
     }
 
     @Override
@@ -78,6 +85,9 @@ public class FoodChainsTTS extends ListenerAdapter {
             joinVoiceChannel(guild, event, voiceChannelId);
         } else if (message.equalsIgnoreCase("/leave")) {
             leaveVoiceChannel(event);
+        }if (message.equalsIgnoreCase("/reset")) {
+            resetOutputDirectory();
+            event.getChannel().sendMessage("출력 디렉토리가 초기화되었습니다!").queue();
         } else {
             // /join 상태가 아닌 경우 TTS 처리 무시
             if (audioManager == null || !audioManager.isConnected()) {
@@ -92,6 +102,23 @@ public class FoodChainsTTS extends ListenerAdapter {
                 event.getChannel().sendMessage("TTS 변환 중 오류가 발생했습니다!").queue();
             } else {
                 playAudio(audioFile, guild);
+            }
+        }
+    }
+
+    public void resetOutputDirectory() {
+        File outputDir = new File("src/main/resources/outputs/");
+
+        // 디렉토리가 존재하는지 확인
+        if (outputDir.exists() && outputDir.isDirectory()) {
+            // 디렉토리 내 모든 파일 삭제
+            File[] files = outputDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.exists()) {
+                        file.delete(); // 파일 삭제
+                    }
+                }
             }
         }
     }
@@ -140,7 +167,7 @@ public class FoodChainsTTS extends ListenerAdapter {
 
             // 오디오 데이터를 파일로 저장
             ByteString audioContents = response.getAudioContent();
-            File outputFile = new File("src/main/resources/output.wav");
+            File outputFile = new File("src/main/resources/outputs/output"+filecount+++".wav");
             try (OutputStream out = new FileOutputStream(outputFile)) {
                 out.write(audioContents.toByteArray());
             }
@@ -157,16 +184,15 @@ public class FoodChainsTTS extends ListenerAdapter {
 //        File outputOpus = new File("src/main/resources/output.opus");
         // WAV 파일을 Opus로 변환
 //            AutioConverter.convertWavToOpus(audioFile, outputOpus);
-        AudioPlayer player = playerManager.createPlayer();
-        TrackScheduler trackScheduler = new TrackScheduler(player);
-        player.addListener(trackScheduler);
 
-        sendHandler = new AudioPlayerSendHandler(player);
-        setAudioManagerHandler(guild,sendHandler);
+        if( sendHandler == null) {
+            sendHandler = new AudioPlayerSendHandler(audioPlayer);
+            setAudioManagerHandler(guild,sendHandler);
+        }
 
         // 1. 벨 소리 추가
         File bellFile = new File("src/main/resources/bell.mp3");
-        playerManager.loadItemOrdered(player, bellFile.getAbsolutePath(), new AudioLoadResultHandler() {
+        playerManager.loadItemOrdered(audioPlayer, bellFile.getAbsolutePath(), new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
                 trackScheduler.queue(track); // 벨 소리 큐에 추가
@@ -191,7 +217,7 @@ public class FoodChainsTTS extends ListenerAdapter {
 
 
         // 2. 메시지 파일 추가
-        playerManager.loadItemOrdered(player, audioFile.getAbsolutePath(), new AudioLoadResultHandler() {
+        playerManager.loadItemOrdered(audioPlayer, audioFile.getAbsolutePath(), new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {
                 trackScheduler.queue(track); // 메시지 파일 큐에 추가
