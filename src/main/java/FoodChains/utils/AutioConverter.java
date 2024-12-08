@@ -1,4 +1,4 @@
-package FoodChains;
+package FoodChains.utils;
 
 import net.bramp.ffmpeg.FFmpeg;
 import net.bramp.ffmpeg.FFmpegExecutor;

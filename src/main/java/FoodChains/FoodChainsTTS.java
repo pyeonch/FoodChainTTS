@@ -1,11 +1,18 @@
 package FoodChains;
 
+import FoodChains.utils.AudioPlayerSendHandler;
+import FoodChains.utils.TrackScheduler;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.texttospeech.v1.*;
 import com.google.protobuf.ByteString;
+import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
+import com.sedmelluq.discord.lavaplayer.source.local.LocalAudioSourceManager;
+import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
+import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
+import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Guild;
@@ -18,7 +25,6 @@ import org.jetbrains.annotations.NotNull;
 
 
 import java.io.*;
-import java.nio.ByteBuffer;
 
 import static FoodChains.Consts.*;
 
@@ -27,8 +33,9 @@ public class FoodChainsTTS extends ListenerAdapter {
     static Area currentArea = Area.FOREST;
     private AudioManager audioManager;
     private TextToSpeechClient ttsClient;
-    private AudioPlayerManager playerManager;
-    private AudioPlayer player;
+    private final AudioPlayerManager playerManager;
+    private AudioPlayer audioPlayer;
+    private AudioPlayerSendHandler sendHandler;
 
 
     public static void main(String[] args) {
@@ -53,7 +60,7 @@ public class FoodChainsTTS extends ListenerAdapter {
     public FoodChainsTTS(TextToSpeechClient ttsClient) {
         this.ttsClient = ttsClient;
         playerManager = new DefaultAudioPlayerManager();
-        player = playerManager.createPlayer();
+        playerManager.registerSourceManager(new LocalAudioSourceManager());
     }
 
     @Override
@@ -147,19 +154,71 @@ public class FoodChainsTTS extends ListenerAdapter {
     }
 
     private void playAudio(File audioFile, Guild guild) {
-        File outputOpus = new File("src/main/resources/output.opus");
+//        File outputOpus = new File("src/main/resources/output.opus");
+        // WAV 파일을 Opus로 변환
+//            AutioConverter.convertWavToOpus(audioFile, outputOpus);
+        AudioPlayer player = playerManager.createPlayer();
+        TrackScheduler trackScheduler = new TrackScheduler(player);
+        player.addListener(trackScheduler);
 
-        try {
-            // WAV 파일을 Opus로 변환
-            AutioConverter.convertWavToOpus(audioFile, outputOpus);
+        sendHandler = new AudioPlayerSendHandler(player);
+        setAudioManagerHandler(guild,sendHandler);
+
+        // 1. 벨 소리 추가
+        File bellFile = new File("src/main/resources/bell.mp3");
+        playerManager.loadItemOrdered(player, bellFile.getAbsolutePath(), new AudioLoadResultHandler() {
+            @Override
+            public void trackLoaded(AudioTrack track) {
+                trackScheduler.queue(track); // 벨 소리 큐에 추가
+            }
+
+            @Override
+            public void playlistLoaded(AudioPlaylist playlist) {
+                System.out.println("벨 소리 플레이리스트 로드됨");
+            }
+
+            @Override
+            public void noMatches() {
+                System.out.println("벨 소리 매치된 것 없음.");
+            }
+
+            @Override
+            public void loadFailed(FriendlyException exception) {
+                System.out.println("벨 소리 로드 실패");
+                exception.printStackTrace();
+            }
+        });
 
 
+        // 2. 메시지 파일 추가
+        playerManager.loadItemOrdered(player, audioFile.getAbsolutePath(), new AudioLoadResultHandler() {
+            @Override
+            public void trackLoaded(AudioTrack track) {
+                trackScheduler.queue(track); // 메시지 파일 큐에 추가
+            }
 
+            @Override
+            public void playlistLoaded(AudioPlaylist playlist) {
+                System.out.println("메시지 파일 플레이리스트 로드됨");
+            }
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+            @Override
+            public void noMatches() {
+                System.out.println("메시지 파일 매치된 것 없음.");
+            }
+
+            @Override
+            public void loadFailed(FriendlyException exception) {
+                System.out.println("메시지 파일 로드 실패");
+                exception.printStackTrace();
+            }
+        });
+
     }
 
+    private void setAudioManagerHandler(Guild guild, AudioPlayerSendHandler sendHandler) {
+        AudioManager audioManager = guild.getAudioManager();
+        audioManager.setSendingHandler(sendHandler);
+    }
 
 }
