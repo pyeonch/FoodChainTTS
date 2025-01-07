@@ -30,7 +30,43 @@ import static FoodChains.Consts.*;
 
 public class FoodChainsTTS extends ListenerAdapter {
 
-    static Area currentArea = Area.FOREST;
+//    static Area currentArea = Area.FOREST;
+//    static BootPath bootPath = BootPath.DOCKER;
+    static Area currentArea;
+    static BootPath bootPath;
+
+    static {
+    String areaEnv = System.getenv("CURRENT_AREA");
+    String bootPathEnv = System.getenv("BOOT_PATH");
+
+    // Area 기본값 설정
+    if (areaEnv != null) {
+        try {
+            System.out.println("CURRENT_AREA : " + areaEnv);
+            currentArea = Area.valueOf(areaEnv.toUpperCase()); // 대소문자 처리
+        } catch (IllegalArgumentException e) {
+            System.err.println("Invalid CURRENT_AREA value: " + areaEnv);
+            currentArea = Area.FOREST; // 기본값
+        }
+    } else {
+        System.err.println("BOOT_PATH ENV NOT SET");
+        currentArea = Area.FOREST; // 기본값
+    }
+
+    // BootPath 기본값 설정
+    if (bootPathEnv != null) {
+        try {
+            System.out.println("BOOT_PATH : " + bootPathEnv);
+            bootPath = BootPath.valueOf(bootPathEnv.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            System.err.println("Invalid BOOT_PATH value: " + bootPathEnv);
+            bootPath = BootPath.DOCKER; // 기본값
+        }
+    } else {
+        System.err.println("BOOT_PATH ENV NOT SET");
+        bootPath = BootPath.LOCAL; // 기본값
+    }
+}
     private AudioManager audioManager;
     private TextToSpeechClient ttsClient;
     private final AudioPlayerManager playerManager;
@@ -39,12 +75,24 @@ public class FoodChainsTTS extends ListenerAdapter {
     private final TrackScheduler trackScheduler;
 
     int filecount=0;
+    static String outputPath = "src/main/resources/outputs/";
 
     public static void main(String[] args) {
         try {
-            // 인증 파일 경로 지정 및 TTS 클라이언트 초기화
-            String credentialsPath = "src/main/resources/endless-set-444008-f4-01242aec48da.json";
-            GoogleCredentials credentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath));
+            GoogleCredentials credentials;
+            if(bootPath == BootPath.LOCAL){
+                // 로컬용
+                String credentialsPath = "src/main/resources/endless-set-444008-f4-01242aec48da.json";
+                credentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath));
+            } else {
+                //도커용
+                InputStream inputStream = FoodChainsTTS.class.getClassLoader()
+                        .getResourceAsStream("endless-set-444008-f4-01242aec48da.json");
+                credentials = GoogleCredentials.fromStream(inputStream);
+                new File("/app/outputs").mkdirs();
+                outputPath = "/app/outputs/";
+            }
+
             TextToSpeechSettings settings = TextToSpeechSettings.newBuilder()
                     .setCredentialsProvider(() -> credentials)
                     .build();
@@ -72,7 +120,11 @@ public class FoodChainsTTS extends ListenerAdapter {
 
     @Override
     public void onMessageReceived(@NotNull MessageReceivedEvent event) {
-        if(event.getAuthor().isBot()) return;
+
+        if (event.getAuthor().isBot() && event.getAuthor().equals(event.getJDA().getSelfUser())) {
+            return;
+        }
+
         if (!event.getChannel().getId().equals(currentArea.getChatChannelId())) {
             return;
         }
@@ -107,7 +159,7 @@ public class FoodChainsTTS extends ListenerAdapter {
     }
 
     public void resetOutputDirectory() {
-        File outputDir = new File("src/main/resources/outputs/");
+        File outputDir = new File(outputPath);
 
         // 디렉토리가 존재하는지 확인
         if (outputDir.exists() && outputDir.isDirectory()) {
@@ -167,7 +219,7 @@ public class FoodChainsTTS extends ListenerAdapter {
 
             // 오디오 데이터를 파일로 저장
             ByteString audioContents = response.getAudioContent();
-            File outputFile = new File("src/main/resources/outputs/output"+filecount+++".wav");
+            File outputFile = new File(outputPath+"output"+filecount+++".wav");
             try (OutputStream out = new FileOutputStream(outputFile)) {
                 out.write(audioContents.toByteArray());
             }
@@ -191,7 +243,12 @@ public class FoodChainsTTS extends ListenerAdapter {
         }
 
         // 1. 벨 소리 추가
-        File bellFile = new File("src/main/resources/bell.mp3");
+        File bellFile;
+        if(bootPath == BootPath.LOCAL) {
+            bellFile = new File("src/main/resources/bell.mp3");
+        }else {
+            bellFile = new File("/app/bell.mp3");
+        }
         playerManager.loadItemOrdered(audioPlayer, bellFile.getAbsolutePath(), new AudioLoadResultHandler() {
             @Override
             public void trackLoaded(AudioTrack track) {

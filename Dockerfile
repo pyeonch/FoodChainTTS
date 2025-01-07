@@ -5,7 +5,7 @@ FROM openjdk:17-jdk-slim
 WORKDIR /app
 
 # JAR 파일 복사
-COPY target/jdaEx2-1.0-SNAPSHOT.jar app.jar
+COPY target/FoodChainsTTS-1.0-SNAPSHOT.jar app.jar
 
 # 실행 명령어 설정
 ENTRYPOINT ["java", "-jar", "app.jar"]
